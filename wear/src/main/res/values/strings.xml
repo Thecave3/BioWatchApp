@@ -7,4 +7,5 @@
     <string name="start_record">Start</string>
     <string name="time_since_begin">Time since begin: </string>
     <string name="stop_record">Stop</string>
+    <string name="send_data">Send data</string>
 </resources>

@@ -13,6 +13,14 @@ import android.support.wearable.activity.WearableActivity;
 import android.util.Log;
 import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Locale;
 
 public class MainActivity extends WearableActivity implements SensorEventListener {
 
@@ -21,7 +29,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     private final static int SAMPLING_PERIOD_MILLISECONDS = 2000;
 
     private TextView currentHeartRateView, timeSinceBeginView;
-    private Button startButton;
+    private Button startButton, sendData;
 
     private long timeSinceBegin = 0;
     private double currentHeartRate = 0.0f;
@@ -31,12 +39,15 @@ public class MainActivity extends WearableActivity implements SensorEventListene
 
     private boolean isRecording = false;
 
+    private FileWriter fileWriter;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         startButton = findViewById(R.id.start_button);
+        sendData = findViewById(R.id.send_data_button);
 
         currentHeartRateView = findViewById(R.id.current_heartrate);
         timeSinceBeginView = findViewById(R.id.time_passed);
@@ -53,16 +64,37 @@ public class MainActivity extends WearableActivity implements SensorEventListene
             if (isRecording) {
                 mSensorManager.unregisterListener(listener);
                 button.setText(R.string.start_record);
+                try {
+                    fileWriter.close();
+                    fileWriter = null;
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    Toast.makeText(getApplicationContext(), e.getMessage(), Toast.LENGTH_LONG).show();
+                }
+                timeSinceBegin = 0;
                 isRecording = false;
             } else {
-                initializeSaveFile();
+                try {
+                    initializeSaveFile();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    Toast.makeText(getApplicationContext(), e.getMessage(), Toast.LENGTH_LONG).show();
+                }
                 button.setText(R.string.stop_record);
-                timeSinceBegin = System.nanoTime();
-                mSensorManager.registerListener(listener, heartRateSensor, SAMPLING_PERIOD_MILLISECONDS);
+                mSensorManager.registerListener(listener, heartRateSensor, SensorManager.SENSOR_DELAY_FASTEST);
                 isRecording = true;
             }
 
         });
+
+        sendData.setOnClickListener(view -> {
+            Button button = (Button) view;
+            if (isRecording)
+                startButton.performClick();
+
+            // TODO: 15/02/2019 sendData
+        });
+
         if (checkSelfPermission(Manifest.permission.BODY_SENSORS)
                 != PackageManager.PERMISSION_GRANTED) {
             Log.d(TAG, "Permission not granted, asking for");
@@ -75,21 +107,35 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         setAmbientEnabled();
     }
 
-    private void initializeSaveFile() {
+    private void initializeSaveFile() throws IOException {
         // Initialize file
+        final String today = new SimpleDateFormat("MMMM_dd_yyyy", Locale.ITALY).format(Calendar.getInstance(Locale.ITALY).getTime());
+        int counter = 0;
+        String filename = today + "_" + counter + ".csv";
+        File logfile;
+        do {
+            logfile = new File(getApplicationContext().getFilesDir(), filename);
+            counter++;
+        } while (logfile.createNewFile());
 
-        //final String filename = "" + +".csv";
-
+        fileWriter = new FileWriter(logfile);
+        fileWriter.write(SAMPLING_PERIOD_MILLISECONDS + ",Time,Value\n");
     }
 
     @Override
     public void onSensorChanged(final SensorEvent sensorEvent) {
         //  Log.d(TAG, "onSensorChanged: timestamp : \"" + sensorEvent.timestamp + "\", value \"" + Arrays.toString(sensorEvent.values) + "\"");
-        runOnUiThread(() -> {
-            timeSinceBeginView.setText(new StringBuilder().append(getString(R.string.time_since_begin)).append(sensorEvent.timestamp - timeSinceBegin));
-            currentHeartRate = sensorEvent.values[0];
-            currentHeartRateView.setText(new StringBuilder().append(getString(R.string.current_heartrate_placeholder)).append(currentHeartRate));
-        });
+        currentHeartRate = sensorEvent.values[0];
+        try {
+            fileWriter.write("," + timeSinceBegin + "," + currentHeartRate + "\n");
+        } catch (IOException e) {
+            e.printStackTrace();
+            Toast.makeText(getApplicationContext(), e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+        timeSinceBegin++;
+        timeSinceBeginView.setText(new StringBuilder().append(getString(R.string.time_since_begin)).append(timeSinceBegin));
+        currentHeartRateView.setText(new StringBuilder().append(getString(R.string.current_heartrate_placeholder)).append(currentHeartRate));
+
     }
 
     @Override

@@ -9,6 +9,7 @@
     tools:context=".MainActivity"
     tools:deviceIds="wear">
 
+
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -16,29 +17,49 @@
         app:boxedEdges="all"
         tools:ignore="MissingPrefix">
 
-        <TextView
-            android:id="@+id/current_heartrate"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="top|center"
-            android:text="@string/current_heartrate_placeholder" />
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            tools:ignore="UselessParent">
 
-        <TextView
-            android:id="@+id/time_passed"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:paddingBottom="5dp"
-            android:text="@string/time_since_begin" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
-        <Button
-            android:id="@+id/start_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|center"
-            android:text="@string/start_record"
-            android:textAllCaps="false" />
+                <TextView
+                    android:id="@+id/current_heartrate"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|center"
+                    android:text="@string/current_heartrate_placeholder" />
 
+                <TextView
+                    android:id="@+id/time_passed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:paddingBottom="5dp"
+                    android:text="@string/time_since_begin" />
+
+                <Button
+                    android:id="@+id/start_button"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|center"
+                    android:text="@string/start_record"
+                    android:textAllCaps="false" />
+
+                <Button
+                    android:id="@+id/send_data_button"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|center"
+                    android:text="@string/send_data"
+                    android:textAllCaps="false" />
+
+            </LinearLayout>
+        </ScrollView>
 
     </FrameLayout>
 
