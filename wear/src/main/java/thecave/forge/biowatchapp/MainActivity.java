@@ -11,13 +11,22 @@ import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.wearable.activity.WearableActivity;
 import android.util.Log;
+import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.android.gms.tasks.Task;
+import com.google.android.gms.wearable.Asset;
+import com.google.android.gms.wearable.DataItem;
+import com.google.android.gms.wearable.PutDataMapRequest;
+import com.google.android.gms.wearable.PutDataRequest;
+import com.google.android.gms.wearable.Wearable;
+
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Locale;
@@ -28,8 +37,10 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     private final static int PERMISSIONS_REQUEST_BODY_SENSOR = 1;
     private final static int SAMPLING_PERIOD_MILLISECONDS = 2000;
 
+    private static final String PATHNAME = "/datafile";
+
     private TextView currentHeartRateView, timeSinceBeginView;
-    private Button startButton, sendData;
+    private Button startButton, sendDataButton;
 
     private long timeSinceBegin = 0;
     private double currentHeartRate = 0.0f;
@@ -47,7 +58,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         setContentView(R.layout.activity_main);
 
         startButton = findViewById(R.id.start_button);
-        sendData = findViewById(R.id.send_data_button);
+        sendDataButton = findViewById(R.id.send_data_button);
 
         currentHeartRateView = findViewById(R.id.current_heartrate);
         timeSinceBeginView = findViewById(R.id.time_passed);
@@ -87,12 +98,15 @@ public class MainActivity extends WearableActivity implements SensorEventListene
 
         });
 
-        sendData.setOnClickListener(view -> {
-            Button button = (Button) view;
+        sendDataButton.setOnClickListener(view -> {
             if (isRecording)
                 startButton.performClick();
-
-            // TODO: 15/02/2019 sendData
+            try {
+                sendData();
+            } catch (IOException e) {
+                e.printStackTrace();
+                Toast.makeText(getApplicationContext(), e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
         });
 
         if (checkSelfPermission(Manifest.permission.BODY_SENSORS)
@@ -107,6 +121,32 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         setAmbientEnabled();
     }
 
+    private void sendData() throws IOException {
+        sendDataButton.setVisibility(View.GONE);
+        PutDataMapRequest dataMap = PutDataMapRequest.create(PATHNAME);
+        PutDataRequest request;
+        Task<DataItem> putTask;
+
+        Log.d(TAG, "sendData: Start sending files");
+
+        for (File file : getFilesDir().listFiles()) {
+            if (file.isFile()) {
+                Log.d(TAG, "sendData: " + file.getName());
+                dataMap.getDataMap().putAsset(file.getName(), Asset.createFromBytes(Files.readAllBytes(file.toPath())));
+                request = dataMap.asPutDataRequest();
+                if (!request.isUrgent())
+                    request.setUrgent();
+                putTask = Wearable.getDataClient(this, new Wearable.WearableOptions.Builder().setLooper(getMainLooper()).build()).putDataItem(request);
+                putTask.addOnSuccessListener(dataItem -> Log.d(TAG, "sendData: OnSuccess"));
+                putTask.addOnFailureListener(Throwable::printStackTrace);
+            }
+        }
+
+        sendDataButton.setVisibility(View.VISIBLE);
+        //Toast.makeText(this, "Starting sending files", Toast.LENGTH_SHORT).show();
+        Log.d(TAG, "sendData: sent all files");
+    }
+
     private void initializeSaveFile() throws IOException {
         // Initialize file
         final String today = new SimpleDateFormat("MMMM_dd_yyyy", Locale.ITALY).format(Calendar.getInstance(Locale.ITALY).getTime());
@@ -114,7 +154,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         String filename = today + "_" + counter + ".csv";
         File logfile;
         do {
-            logfile = new File(getApplicationContext().getFilesDir(), filename);
+            logfile = new File(getFilesDir(), filename);
             counter++;
         } while (logfile.createNewFile());
 

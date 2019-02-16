@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">BioWatchCompanionApp</string>
+    <string name="debugger">Debugger</string>
 </resources>
