@@ -75,7 +75,19 @@ public class MainActivity extends WearableActivity implements SensorEventListene
 
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
 
-        heartRateSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE);
+
+        // change number in base of the watch
+        for (Sensor currentSensor : mSensorManager.getSensorList(Sensor.TYPE_ALL)) {
+            Log.i("List sensor", "Name: " + currentSensor.getName() + " Type_String: " + currentSensor.getStringType() + " /ype_number: " + currentSensor.getType());
+            if (currentSensor.getType() == 33171030) {
+                heartRateSensor = currentSensor;
+                break;
+            }
+        }
+
+        // heartRateSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE);
+
+        Log.d(TAG, "CURRENTLY USED " + heartRateSensor.getName() + " Type String " + heartRateSensor.getStringType() + " Type number :" + heartRateSensor.getType());
         final SensorEventListener listener = this;
 
         startButton.setOnClickListener(view -> {
@@ -204,7 +216,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     @Override
     public void onSensorChanged(final SensorEvent sensorEvent) {
         //  Log.d(TAG, "onSensorChanged: timestamp : \"" + sensorEvent.timestamp + "\", value \"" + Arrays.toString(sensorEvent.values) + "\"");
-        currentHeartRate = sensorEvent.values[0];
+        currentHeartRate = (int) sensorEvent.values[0];
         try {
             fileWriter.append(",").append(String.valueOf(timeSinceBegin)).append(",").append(String.valueOf(currentHeartRate)).append("\n");
         } catch (IOException e) {
