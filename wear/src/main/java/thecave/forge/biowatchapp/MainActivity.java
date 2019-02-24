@@ -7,6 +7,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.wearable.activity.WearableActivity;
@@ -17,30 +18,35 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.gms.tasks.Task;
-import com.google.android.gms.wearable.Asset;
-import com.google.android.gms.wearable.DataItem;
-import com.google.android.gms.wearable.PutDataMapRequest;
-import com.google.android.gms.wearable.PutDataRequest;
+import com.google.android.gms.tasks.Tasks;
+import com.google.android.gms.wearable.CapabilityClient;
+import com.google.android.gms.wearable.CapabilityInfo;
+import com.google.android.gms.wearable.ChannelClient;
+import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
 
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
 
 public class MainActivity extends WearableActivity implements SensorEventListener {
 
     private final static String TAG = MainActivity.class.getSimpleName();
     private final static int PERMISSIONS_REQUEST_BODY_SENSOR = 1;
-    private final static int SAMPLING_PERIOD_MILLISECONDS = 2000;
 
-    private static final String PATHNAME = "/datafile";
+    private final static String FILE_EXCHANGE_CAPABILITY_NAME = "file_exchange";
+
+    private String transcriptionNodeId;
+
+    private static final String FILE_EXCHANGE_PATH = "/file_exchange";
 
     private TextView currentHeartRateView, timeSinceBeginView;
-    private Button startButton, sendDataButton;
+    private Button startButton, sendDataButton, clearDataButton;
 
     private long timeSinceBegin = 0;
     private double currentHeartRate = 0.0f;
@@ -51,6 +57,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     private boolean isRecording = false;
 
     private FileWriter fileWriter;
+    private File fileToSend;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,6 +66,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
 
         startButton = findViewById(R.id.start_button);
         sendDataButton = findViewById(R.id.send_data_button);
+        clearDataButton = findViewById(R.id.clear_data_button);
 
         currentHeartRateView = findViewById(R.id.current_heartrate);
         timeSinceBeginView = findViewById(R.id.time_passed);
@@ -98,15 +106,11 @@ public class MainActivity extends WearableActivity implements SensorEventListene
 
         });
 
+        sendDataButton.setVisibility(View.GONE);
         sendDataButton.setOnClickListener(view -> {
             if (isRecording)
                 startButton.performClick();
-            try {
-                sendData();
-            } catch (IOException e) {
-                e.printStackTrace();
-                Toast.makeText(getApplicationContext(), e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
+            new Thread(this::sendData).start();
         });
 
         if (checkSelfPermission(Manifest.permission.BODY_SENSORS)
@@ -117,49 +121,84 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         } else {
             Log.d(TAG, "Permission already granted");
         }
+
+        clearDataButton.setOnClickListener(view -> clearData());
+
         // Enables Always-on
         setAmbientEnabled();
+
+
+        new Thread(() -> {
+            try {
+                CapabilityInfo capabilityInfo = Tasks.await(Wearable.getCapabilityClient(this).getCapability(
+                        FILE_EXCHANGE_CAPABILITY_NAME, CapabilityClient.FILTER_REACHABLE));
+                setupFileExchange(capabilityInfo);
+            } catch (InterruptedException | ExecutionException e) {
+                e.printStackTrace();
+            }
+        }).start();
     }
 
-    private void sendData() throws IOException {
-        sendDataButton.setVisibility(View.GONE);
-        PutDataMapRequest dataMap = PutDataMapRequest.create(PATHNAME);
-        PutDataRequest request;
-        Task<DataItem> putTask;
+    private void setupFileExchange(CapabilityInfo capabilityInfo) {
+        Log.d(TAG, "setupFileExchange: setup file exchange started");
+        Set<Node> connectedNodes = capabilityInfo.getNodes();
+        transcriptionNodeId = pickBestNodeId(connectedNodes);
+        Log.d(TAG, "picking best node");
+        runOnUiThread(() -> sendDataButton.setVisibility(View.VISIBLE));
+    }
 
-        Log.d(TAG, "sendData: Start sending files");
 
-        for (File file : getFilesDir().listFiles()) {
-            if (file.isFile()) {
-                Log.d(TAG, "sendData: " + file.getName());
-                dataMap.getDataMap().putAsset(file.getName(), Asset.createFromBytes(Files.readAllBytes(file.toPath())));
-                request = dataMap.asPutDataRequest();
-                if (!request.isUrgent())
-                    request.setUrgent();
-                putTask = Wearable.getDataClient(this, new Wearable.WearableOptions.Builder().setLooper(getMainLooper()).build()).putDataItem(request);
-                putTask.addOnSuccessListener(dataItem -> Log.d(TAG, "sendData: OnSuccess"));
-                putTask.addOnFailureListener(Throwable::printStackTrace);
+    private String pickBestNodeId(Set<Node> nodes) {
+        String bestNodeId = null;
+        // Find a nearby node or pick one arbitrarily
+        for (Node node : nodes) {
+            if (node.isNearby()) {
+                return node.getId();
             }
+            bestNodeId = node.getId();
         }
+        return bestNodeId;
+    }
 
-        sendDataButton.setVisibility(View.VISIBLE);
-        //Toast.makeText(this, "Starting sending files", Toast.LENGTH_SHORT).show();
-        Log.d(TAG, "sendData: sent all files");
+    private synchronized void sendData() {
+        if (transcriptionNodeId != null) {
+
+            Log.d(TAG, "sendData: Start sending " + fileToSend);
+            ChannelClient channelClient = Wearable.getChannelClient(this);
+            Task<ChannelClient.Channel> channelClientTask = channelClient.openChannel(transcriptionNodeId, FILE_EXCHANGE_PATH);
+            try {
+                ChannelClient.Channel channel = Tasks.await(channelClientTask);
+
+                Tasks.await(channelClient.sendFile(channel, Uri.fromFile(fileToSend)));
+            } catch (InterruptedException | ExecutionException e) {
+                e.printStackTrace();
+                Log.e(TAG, "sendData: " + e.getMessage());
+            }
+        } else {
+            Log.e(TAG, "sendData: transcription Node id == null!");
+        }
     }
 
     private void initializeSaveFile() throws IOException {
         // Initialize file
-        final String today = new SimpleDateFormat("MMMM_dd_yyyy", Locale.ITALY).format(Calendar.getInstance(Locale.ITALY).getTime());
-        int counter = 0;
-        String filename = today + "_" + counter + ".csv";
-        File logfile;
-        do {
-            logfile = new File(getFilesDir(), filename);
-            counter++;
-        } while (logfile.createNewFile());
+        final String today = new SimpleDateFormat("MMMM_dd_yyyy 'at' HH:mm:ss z", Locale.ITALY).format(Calendar.getInstance(Locale.ITALY).getTime());
+        fileToSend = new File(getFilesDir(), "filetosend.csv");
 
-        fileWriter = new FileWriter(logfile);
-        fileWriter.write(SAMPLING_PERIOD_MILLISECONDS + ",Time,Value\n");
+        boolean res = fileToSend.createNewFile();
+        Log.d(TAG, "initializeSaveFile: new file created? " + res);
+
+        fileWriter = new FileWriter(fileToSend);
+        fileWriter.append(today).append(",Time,Value\n");
+    }
+
+    private void clearData() {
+        if (fileToSend.exists()) {
+            boolean res = fileToSend.delete();
+            Log.d(TAG, "initializeSaveFile: file deleted? " + res);
+        }
+        for (File file : getFilesDir().listFiles())
+            if (file.isFile())
+                file.delete();
     }
 
     @Override
@@ -167,7 +206,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         //  Log.d(TAG, "onSensorChanged: timestamp : \"" + sensorEvent.timestamp + "\", value \"" + Arrays.toString(sensorEvent.values) + "\"");
         currentHeartRate = sensorEvent.values[0];
         try {
-            fileWriter.write("," + timeSinceBegin + "," + currentHeartRate + "\n");
+            fileWriter.append(",").append(String.valueOf(timeSinceBegin)).append(",").append(String.valueOf(currentHeartRate)).append("\n");
         } catch (IOException e) {
             e.printStackTrace();
             Toast.makeText(getApplicationContext(), e.getMessage(), Toast.LENGTH_LONG).show();

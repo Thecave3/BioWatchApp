@@ -2,10 +2,9 @@ package thecave.forge.biowatchapp;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.Handler;
-import android.os.Looper;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
@@ -14,28 +13,21 @@ import android.util.Log;
 import android.widget.TextView;
 
 import com.google.android.gms.tasks.Tasks;
-import com.google.android.gms.wearable.DataClient;
-import com.google.android.gms.wearable.DataEvent;
-import com.google.android.gms.wearable.DataEventBuffer;
-import com.google.android.gms.wearable.DataItem;
-import com.google.android.gms.wearable.DataMap;
-import com.google.android.gms.wearable.DataMapItem;
+import com.google.android.gms.wearable.ChannelClient;
 import com.google.android.gms.wearable.Wearable;
 
 import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.util.concurrent.ExecutionException;
 
-public class MainActivity extends AppCompatActivity implements DataClient.OnDataChangedListener {
+public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final int MY_PERMISSIONS_REQUEST_WRITE_EXT_STORAGE = 1;
-    private static final String PATHNAME = "/datafile";
+    private static final String FILE_EXCHANGE_PATH = "/file_exchange";
+    private TextView debugger;
 
-    TextView debugger;
+    ChannelClient.ChannelCallback channelCallback;
+    ChannelClient channelClient;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,9 +44,86 @@ public class MainActivity extends AppCompatActivity implements DataClient.OnData
             writeDebug("Permission granted");
         }
 
+        channelCallback = new ChannelClient.ChannelCallback() {
+            @Override
+            public void onChannelOpened(@NonNull ChannelClient.Channel channel) {
+                super.onChannelOpened(channel);
+                writeDebug("Channel opened");
+                if (channel.getPath().equals(FILE_EXCHANGE_PATH)) {
+                    writeDebug("Path del channel corretto");
+                    new Thread(() -> {
+                        try {
+                            writeDebug("Starting save Files on external Storage");
+                            Tasks.await(channelClient.receiveFile(channel, Uri.fromFile(new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "wear_hr_data.csv")), false));
 
+                            writeDebug("File save complete");
+                        } catch (InterruptedException | ExecutionException e) {
+                            e.printStackTrace();
+                            writeErrorDebug(e.getMessage());
+                        }
+                    }).start();
+                } else {
+                    writeErrorDebug("path del channel = " + channel.getPath());
+                }
+            }
+
+            @Override
+            public void onChannelClosed(@NonNull ChannelClient.Channel channel, int closeReason, int appSpecificErrorCode) {
+                super.onChannelClosed(channel, closeReason, appSpecificErrorCode);
+                switch (closeReason) {
+                    case ChannelClient.ChannelCallback.CLOSE_REASON_DISCONNECTED:
+                        writeDebug("channel closed: Disconnected");
+                        break;
+                    case ChannelClient.ChannelCallback.CLOSE_REASON_LOCAL_CLOSE:
+                        writeDebug("channel closed: Local close");
+                        break;
+                    case ChannelClient.ChannelCallback.CLOSE_REASON_REMOTE_CLOSE:
+                        writeDebug("channel closed: Remote close");
+                        break;
+                }
+            }
+
+            @Override
+            public void onInputClosed(@NonNull ChannelClient.Channel channel, int closeReason, int appSpecificErrorCode) {
+                super.onInputClosed(channel, closeReason, appSpecificErrorCode);
+                switch (closeReason) {
+                    case ChannelClient.ChannelCallback.CLOSE_REASON_NORMAL:
+                        writeDebug("Input closed: Normal");
+                        break;
+                    case ChannelClient.ChannelCallback.CLOSE_REASON_DISCONNECTED:
+                        writeDebug("Input closed: Disconnected");
+                        break;
+                    case ChannelClient.ChannelCallback.CLOSE_REASON_LOCAL_CLOSE:
+                        writeDebug("Input closed: Local close");
+                        break;
+                    case ChannelClient.ChannelCallback.CLOSE_REASON_REMOTE_CLOSE:
+                        writeDebug("Input closed: Remote close");
+                        break;
+                }
+            }
+
+            @Override
+            public void onOutputClosed(@NonNull ChannelClient.Channel channel, int closeReason, int appSpecificErrorCode) {
+                super.onOutputClosed(channel, closeReason, appSpecificErrorCode);
+                switch (closeReason) {
+                    case ChannelClient.ChannelCallback.CLOSE_REASON_NORMAL:
+                        writeDebug("Output closed: Normal");
+                        break;
+                    case ChannelClient.ChannelCallback.CLOSE_REASON_DISCONNECTED:
+                        writeDebug("Output closed: Disconnected");
+                        break;
+                    case ChannelClient.ChannelCallback.CLOSE_REASON_LOCAL_CLOSE:
+                        writeDebug("Output closed: Local close");
+                        break;
+                    case ChannelClient.ChannelCallback.CLOSE_REASON_REMOTE_CLOSE:
+                        writeDebug("Output closed: Remote close");
+                        break;
+                }
+            }
+        };
+        channelClient = Wearable.getChannelClient(this);
+        channelClient.registerChannelCallback(channelCallback);
     }
-
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String permissions[], @NonNull int[] grantResults) {
@@ -68,61 +137,7 @@ public class MainActivity extends AppCompatActivity implements DataClient.OnData
                 }
             }
 
-            // other 'case' lines to check for other
-            // permissions this app might request.
         }
-    }
-
-
-    @Override
-    public void onDataChanged(@NonNull DataEventBuffer dataEvents) {
-        writeDebug("onDataChanged: data changed");
-        for (DataEvent event : dataEvents) {
-            event.freeze();
-            switch (event.getType()) {
-                case DataEvent.TYPE_CHANGED:
-                    new Handler(Looper.getMainLooper()).post(() -> {
-                        try {
-                            DataItem item = event.getDataItem();
-                            if (item.getUri().getPath().equals(PATHNAME)) {
-                                writeDebug("equals true");
-                                DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
-                                saveFileOnExternalStorage(dataMap);
-                            } else {
-                                writeDebug("equals false, valore : " + item.getUri().getPath());
-                            }
-                        } catch (ExecutionException e) {
-                            writeErrorDebug(e.getMessage());
-                            e.printStackTrace();
-                        } catch (InterruptedException e) {
-                            writeErrorDebug(e.getMessage());
-                            e.printStackTrace();
-                        } catch (IOException e) {
-                            writeErrorDebug(e.getMessage());
-                            e.printStackTrace();
-                        }
-                    });
-                    break;
-                case DataEvent.TYPE_DELETED:
-                    writeErrorDebug("DataEvent.TYPE_DELETED");
-                    break;
-            }
-        }
-    }
-
-    private void saveFileOnExternalStorage(DataMap dataMap) throws ExecutionException, InterruptedException, IOException {
-        writeDebug("Starting save Files on external Storage");
-        for (String key : dataMap.keySet()) {
-            InputStream inputStream = Tasks.await(Wearable.getDataClient(this).getFdForAsset(dataMap.getAsset(key))).getInputStream();
-            if (inputStream == null) {
-                writeErrorDebug("saveFileOnExternalStorage: inputStream == null, request unknown Asset ");
-            } else {
-                Files.copy(inputStream, new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), key).toPath(), StandardCopyOption.REPLACE_EXISTING);
-                writeDebug("saveFileOnExternalStorage: file \"" + key + "\" copied on " + Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS));
-                writeDebug("File copied!");
-            }
-        }
-        writeDebug("File save complete");
     }
 
     /* Checks if external storage is available for read and write */
@@ -149,13 +164,15 @@ public class MainActivity extends AppCompatActivity implements DataClient.OnData
     @Override
     protected void onResume() {
         super.onResume();
-        Wearable.getDataClient(this).addListener(this);
+        if (channelClient != null && channelCallback != null)
+            channelClient.registerChannelCallback(channelCallback);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        Wearable.getDataClient(this).removeListener(this);
+        if (channelClient != null && channelCallback != null)
+            channelClient.unregisterChannelCallback(channelCallback);
     }
 
 }

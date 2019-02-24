@@ -58,6 +58,14 @@
                     android:text="@string/send_data"
                     android:textAllCaps="false" />
 
+                <Button
+                    android:id="@+id/clear_data_button"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|center"
+                    android:text="@string/clear_data"
+                    android:textAllCaps="false" />
+
             </LinearLayout>
         </ScrollView>
 
