@@ -1,8 +1,9 @@
 package thecave.forge.biowatchapp;
 
 import android.Manifest;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -49,6 +50,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     ChannelClient.ChannelCallback channelCallback;
     ChannelClient channelClient;
 
+    String valori = "";
+
     int time = 0;
 
     @Override
@@ -59,9 +62,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         debugger = findViewById(R.id.debugger);
         startRecordButton = findViewById(R.id.start_record_data);
         sendDataButton = findViewById(R.id.send_data);
-
-        if (fileToSend == null)
-            sendDataButton.setVisibility(View.GONE);
 
 
         startRecordButton.setOnClickListener(view -> {
@@ -74,25 +74,38 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         });
 
         sendDataButton.setOnClickListener(view -> {
+
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("data", valori);
+            clipboard.setPrimaryClip(clip);
+            writeDebug("I dati sono stati copiati nella clipboard");
+
+        /*
             writeDebug("Start share file");
             try {
                 fileWriter.close();
             } catch (IOException e) {
                 e.printStackTrace();
+                writeErrorDebug(e.getMessage());
             }
 
-            Intent intentShareFile = new Intent(Intent.ACTION_SEND);
+            try {
+                Intent intentShareFile = new Intent(Intent.ACTION_SEND);
 
-            if (fileToSend.exists()) {
-                intentShareFile.setType("text/csv");
-                intentShareFile.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(fileToSend));
-                intentShareFile.putExtra(Intent.EXTRA_SUBJECT, "Sharing File...");
-                intentShareFile.putExtra(Intent.EXTRA_TEXT, "Sharing File...");
-                startActivity(Intent.createChooser(intentShareFile, "Share File"));
-                writeDebug("File sharing ongoing... completed");
-            } else {
-                writeErrorDebug("fileToSend does not exists");
+                if (fileToSend.exists()) {
+                    intentShareFile.setType("text/csv");
+                    intentShareFile.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(fileToSend));
+                    startActivity(Intent.createChooser(intentShareFile, "Share File"));
+                    writeDebug("File sharing ongoing... completed");
+                } else {
+                    writeErrorDebug("fileToSend does not exists");
+                }
+            } catch (Exception e) {
+                writeErrorDebug(e.getMessage());
             }
+
+        */
+
         });
 
         if (!isExternalStorageWritable() || ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
@@ -223,7 +236,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         mSensorManager.registerListener(listener, heartIR, SensorManager.SENSOR_DELAY_FASTEST);
         mSensorManager.registerListener(listener, heartRED, SensorManager.SENSOR_DELAY_FASTEST);
         writeDebug("Sensors initialized");
-        writeDebug("Time,value,Sensor");
         fileToSend = new File(getFilesDir(), "raw_data.csv");
 
         boolean res = fileToSend.createNewFile();
@@ -234,7 +246,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             writeDebug("New file created? " + fileToSend.createNewFile());
         }
         fileWriter = new FileWriter(fileToSend);
-        fileWriter.append("Time,SensorTimestamp,Value,Sensor\n");
+        String header = "Time,SensorTimestamp,Value,Sensor\n";
+        fileWriter.append(header);
+        valori += header;
     }
 
     @Override
@@ -300,11 +314,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     @Override
     public void onSensorChanged(SensorEvent sensorEvent) {
-        if (time > 100000) {
+        if (time > 2500) {
             time = 0;
             mSensorManager.unregisterListener(this);
             writeDebug("Finished");
-            sendDataButton.setVisibility(View.VISIBLE);
         } else {
             writeDebug("" + time + "," + sensorEvent.values[0] + "," + sensorEvent.sensor.getName());
             saveData(time, sensorEvent.timestamp, sensorEvent.values[0], sensorEvent.sensor.getName());
@@ -315,6 +328,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private void saveData(int time, float timestamp, float value, String sensorName) {
         try {
             fileWriter.append(String.valueOf(time)).append(",").append(String.valueOf(timestamp)).append(",").append(String.valueOf(value)).append(",").append(sensorName).append("\n");
+            valori += String.valueOf(time) + "," + String.valueOf(timestamp) + "," + String.valueOf(value) + "," + sensorName + "\n";
         } catch (IOException e) {
             e.printStackTrace();
         }
