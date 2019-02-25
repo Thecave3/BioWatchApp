@@ -79,10 +79,10 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         // change number in base of the watch
         for (Sensor currentSensor : mSensorManager.getSensorList(Sensor.TYPE_ALL)) {
             Log.i("List sensor", "Name: " + currentSensor.getName() + " Type_String: " + currentSensor.getStringType() + " /ype_number: " + currentSensor.getType());
-            if (currentSensor.getType() == 33171030) {
+            /*if (currentSensor.getType() == 65538) {
                 heartRateSensor = currentSensor;
                 break;
-            }
+            }*/
         }
 
         // heartRateSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE);

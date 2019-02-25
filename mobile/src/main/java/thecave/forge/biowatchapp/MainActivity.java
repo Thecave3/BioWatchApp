@@ -1,7 +1,12 @@
 package thecave.forge.biowatchapp;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.pm.PackageManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -19,15 +24,20 @@ import com.google.android.gms.wearable.Wearable;
 import java.io.File;
 import java.util.concurrent.ExecutionException;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final int MY_PERMISSIONS_REQUEST_WRITE_EXT_STORAGE = 1;
     private static final String FILE_EXCHANGE_PATH = "/file_exchange";
+    private static final int PERMISSIONS_REQUEST_BODY_SENSOR = 2;
     private TextView debugger;
+
+    private SensorManager mSensorManager;
 
     ChannelClient.ChannelCallback channelCallback;
     ChannelClient channelClient;
+
+    int time = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -43,6 +53,47 @@ public class MainActivity extends AppCompatActivity {
         } else {
             writeDebug("Permission granted");
         }
+
+
+        mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+
+
+        if (checkSelfPermission(Manifest.permission.BODY_SENSORS)
+                != PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG, "Permission not granted, asking for");
+            requestPermissions(
+                    new String[]{Manifest.permission.BODY_SENSORS}, PERMISSIONS_REQUEST_BODY_SENSOR);
+        } else {
+            Log.d(TAG, "Permission heart already granted");
+        }
+
+
+        Sensor heartIR = null;
+        Sensor heartRED = null;
+
+        // change number in base of the watch
+        for (Sensor currentSensor : mSensorManager.getSensorList(Sensor.TYPE_ALL)) {
+            Log.i("List sensor", "Name: " + currentSensor.getName() + " Type_String: " + currentSensor.getStringType() + " /ype_number: " + currentSensor.getType());
+            if (currentSensor.getType() == 65571) {
+                heartIR = currentSensor;
+            }
+
+            if (currentSensor.getType() == 65572) {
+                heartRED = currentSensor;
+            }
+
+        }
+
+        if (heartIR == null || heartRED == null) {
+            writeErrorDebug("heartIR == null || heartRed == null");
+        } else {
+            SensorEventListener listener = this;
+            mSensorManager.registerListener(listener, heartIR, SensorManager.SENSOR_DELAY_FASTEST);
+            mSensorManager.registerListener(listener, heartRED, SensorManager.SENSOR_DELAY_FASTEST);
+            writeDebug("Sensors initilized");
+            writeDebug("Time,value,Sensor");
+        }
+
 
         channelCallback = new ChannelClient.ChannelCallback() {
             @Override
@@ -136,6 +187,17 @@ public class MainActivity extends AppCompatActivity {
                     writeErrorDebug("Permissions NOT granted");
                 }
             }
+            break;
+            case PERMISSIONS_REQUEST_BODY_SENSOR: {
+                if (grantResults.length > 0
+                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    writeDebug("Permission granted");
+
+                } else {
+                    writeErrorDebug("Permissions NOT granted");
+                }
+            }
+            break;
 
         }
     }
@@ -175,4 +237,20 @@ public class MainActivity extends AppCompatActivity {
             channelClient.unregisterChannelCallback(channelCallback);
     }
 
+    @Override
+    public void onSensorChanged(SensorEvent sensorEvent) {
+        writeDebug("" + time + "," + sensorEvent.values[0] + "," + sensorEvent.sensor.getName());
+        if (time > 1000) {
+            time = 0;
+            mSensorManager.unregisterListener(this);
+            writeDebug("Finished");
+        } else {
+            time++;
+        }
+    }
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int i) {
+
+    }
 }
