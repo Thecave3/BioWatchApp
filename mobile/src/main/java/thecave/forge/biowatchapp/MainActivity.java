@@ -1,13 +1,7 @@
 package thecave.forge.biowatchapp;
 
 import android.Manifest;
-import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
-import android.hardware.SensorManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -16,8 +10,6 @@ import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
-import android.view.View;
-import android.widget.Button;
 import android.widget.TextView;
 
 import com.google.android.gms.tasks.Tasks;
@@ -25,31 +17,19 @@ import com.google.android.gms.wearable.ChannelClient;
 import com.google.android.gms.wearable.Wearable;
 
 import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.util.concurrent.ExecutionException;
 
-public class MainActivity extends AppCompatActivity implements SensorEventListener {
+public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final int MY_PERMISSIONS_REQUEST_WRITE_EXT_STORAGE = 1;
     private static final String FILE_EXCHANGE_PATH = "/file_exchange";
     private static final int PERMISSIONS_REQUEST_BODY_SENSOR = 2;
     private TextView debugger;
-    private Button sendDataButton, startRecordButton;
 
-    private SensorManager mSensorManager;
-
-    private File fileToSend;
-    private FileWriter fileWriter;
-
-    Sensor heartIR;
-    Sensor heartRED;
 
     ChannelClient.ChannelCallback channelCallback;
     ChannelClient channelClient;
-
-    int time = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,43 +37,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         setContentView(R.layout.activity_main);
 
         debugger = findViewById(R.id.debugger);
-        startRecordButton = findViewById(R.id.start_record_data);
-        sendDataButton = findViewById(R.id.send_data);
 
-        if (fileToSend == null)
-            sendDataButton.setVisibility(View.GONE);
-
-
-        startRecordButton.setOnClickListener(view -> {
-            try {
-                startRecord();
-                view.setVisibility(View.GONE);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        });
-
-        sendDataButton.setOnClickListener(view -> {
-            writeDebug("Start share file");
-            try {
-                fileWriter.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
-            Intent intentShareFile = new Intent(Intent.ACTION_SEND);
-
-            if (fileToSend.exists()) {
-                intentShareFile.setType("text/csv");
-                intentShareFile.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(fileToSend));
-                intentShareFile.putExtra(Intent.EXTRA_SUBJECT, "Sharing File...");
-                intentShareFile.putExtra(Intent.EXTRA_TEXT, "Sharing File...");
-                startActivity(Intent.createChooser(intentShareFile, "Share File"));
-                writeDebug("File sharing ongoing... completed");
-            } else {
-                writeErrorDebug("fileToSend does not exists");
-            }
-        });
 
         if (!isExternalStorageWritable() || ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -106,9 +50,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
 
 
-        mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-
-
         if (checkSelfPermission(Manifest.permission.BODY_SENSORS)
                 != PackageManager.PERMISSION_GRANTED) {
             writeDebug("Permission heart not granted, asking for");
@@ -117,25 +58,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         } else {
             writeDebug("Permission heart already granted");
         }
-
-        // change number in base of the watch
-        for (Sensor currentSensor : mSensorManager.getSensorList(Sensor.TYPE_ALL)) {
-            //writeDebug("Name: " + currentSensor.getName() + " Type_String: " + currentSensor.getStringType() + " /ype_number: " + currentSensor.getType());
-
-            if (currentSensor.getType() == 65571)
-                heartIR = currentSensor;
-
-            if (currentSensor.getType() == 65572)
-                heartRED = currentSensor;
-        }
-
-
-        if (heartIR == null || heartRED == null) {
-            writeErrorDebug("heartIR == null || heartRed == null");
-        } else {
-            writeDebug("All set and ready to go");
-        }
-
 
         channelCallback = new ChannelClient.ChannelCallback() {
             @Override
@@ -218,25 +140,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         channelClient.registerChannelCallback(channelCallback);
     }
 
-    private void startRecord() throws IOException {
-        SensorEventListener listener = this;
-        mSensorManager.registerListener(listener, heartIR, SensorManager.SENSOR_DELAY_FASTEST);
-        mSensorManager.registerListener(listener, heartRED, SensorManager.SENSOR_DELAY_FASTEST);
-        writeDebug("Sensors initialized");
-        writeDebug("Time,value,Sensor");
-        fileToSend = new File(getFilesDir(), "raw_data.csv");
-
-        boolean res = fileToSend.createNewFile();
-        writeDebug("New file created? " + res);
-        if (!res) {
-            writeDebug("Deleting old file");
-            writeDebug("Old file deleted? " + fileToSend.delete());
-            writeDebug("New file created? " + fileToSend.createNewFile());
-        }
-        fileWriter = new FileWriter(fileToSend);
-        fileWriter.append("Time,SensorTimestamp,Value,Sensor\n");
-    }
-
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String permissions[], @NonNull int[] grantResults) {
         switch (requestCode) {
@@ -296,32 +199,5 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         super.onPause();
         if (channelClient != null && channelCallback != null)
             channelClient.unregisterChannelCallback(channelCallback);
-    }
-
-    @Override
-    public void onSensorChanged(SensorEvent sensorEvent) {
-        if (time > 100000) {
-            time = 0;
-            mSensorManager.unregisterListener(this);
-            writeDebug("Finished");
-            sendDataButton.setVisibility(View.VISIBLE);
-        } else {
-            writeDebug("" + time + "," + sensorEvent.values[0] + "," + sensorEvent.sensor.getName());
-            saveData(time, sensorEvent.timestamp, sensorEvent.values[0], sensorEvent.sensor.getName());
-            time++;
-        }
-    }
-
-    private void saveData(int time, float timestamp, float value, String sensorName) {
-        try {
-            fileWriter.append(String.valueOf(time)).append(",").append(String.valueOf(timestamp)).append(",").append(String.valueOf(value)).append(",").append(sensorName).append("\n");
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int i) {
-        writeDebug(sensor.getName() + " has changed accuracy: " + i);
     }
 }

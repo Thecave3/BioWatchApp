@@ -74,18 +74,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         timeSinceBeginView.setText(new StringBuilder().append(getString(R.string.time_since_begin)).append(timeSinceBegin));
 
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-
-
-        // change number in base of the watch
-        for (Sensor currentSensor : mSensorManager.getSensorList(Sensor.TYPE_ALL)) {
-            Log.i("List sensor", "Name: " + currentSensor.getName() + " Type_String: " + currentSensor.getStringType() + " /ype_number: " + currentSensor.getType());
-            /*if (currentSensor.getType() == 65538) {
-                heartRateSensor = currentSensor;
-                break;
-            }*/
-        }
-
-        // heartRateSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE);
+        heartRateSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE);
 
         Log.d(TAG, "CURRENTLY USED " + heartRateSensor.getName() + " Type String " + heartRateSensor.getStringType() + " Type number :" + heartRateSensor.getType());
         final SensorEventListener listener = this;
@@ -112,7 +101,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
                     Toast.makeText(getApplicationContext(), e.getMessage(), Toast.LENGTH_LONG).show();
                 }
                 button.setText(R.string.stop_record);
-                mSensorManager.registerListener(listener, heartRateSensor, SensorManager.SENSOR_DELAY_FASTEST);
+                mSensorManager.registerListener(listener, heartRateSensor, SensorManager.SENSOR_DELAY_NORMAL);
                 isRecording = true;
             }
 
@@ -135,7 +124,6 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         }
 
         clearDataButton.setOnClickListener(view -> clearData());
-
         // Enables Always-on
         setAmbientEnabled();
 
@@ -164,9 +152,9 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         String bestNodeId = null;
         // Find a nearby node or pick one arbitrarily
         for (Node node : nodes) {
-            if (node.isNearby()) {
+            if (node.isNearby())
                 return node.getId();
-            }
+
             bestNodeId = node.getId();
         }
         return bestNodeId;
