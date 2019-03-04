@@ -5,9 +5,6 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.net.Uri;
 import android.os.Bundle;
@@ -24,43 +21,50 @@ import android.widget.TextView;
 import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.ChannelClient;
 import com.google.android.gms.wearable.Wearable;
+import com.samsung.android.sdk.SsdkUnsupportedException;
+import com.samsung.android.sdk.sensorextension.Ssensor;
+import com.samsung.android.sdk.sensorextension.SsensorEvent;
+import com.samsung.android.sdk.sensorextension.SsensorEventListener;
+import com.samsung.android.sdk.sensorextension.SsensorExtension;
+import com.samsung.android.sdk.sensorextension.SsensorManager;
 
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 
-public class MainActivity extends AppCompatActivity implements SensorEventListener {
+public class MainActivity extends AppCompatActivity implements SsensorEventListener {
 
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final int MY_PERMISSIONS_REQUEST_WRITE_EXT_STORAGE = 1;
     private static final String FILE_EXCHANGE_PATH = "/file_exchange";
     private static final int PERMISSIONS_REQUEST_BODY_SENSOR = 2;
-    private static final int NUM_SAMPLES = 500;
+    private static final int NUM_SAMPLES = 1500;
     private static final int DELAY = SensorManager.SENSOR_DELAY_NORMAL;
 
     private TextView debugger;
     private Button sendDataButton, startRecordButton;
 
-    private SensorManager mSensorManager;
 
     private File fileToSend;
     private FileWriter fileWriter;
 
-    Sensor heartIR;
-    Sensor heartRED;
-    Sensor heartBLUE;
-    Sensor heartGREEN;
+    Ssensor ir, red, green, blue;
+
+    SsensorManager mSsensorManager;
+    SsensorExtension mSensorExtension;
+
+    int time_ir, time_red, time_blue, time_green = 0;
 
     ChannelClient.ChannelCallback channelCallback;
     ChannelClient channelClient;
 
     String valori = "";
-
-    int time_ir = 0;
-    int time_red = 0;
-    int time_blue = 0;
-    int time_green = 0;
+    private boolean irEnabled = true;
+    private boolean blueEnabled = false;
+    private boolean greenEnabled = false;
+    private boolean redEnabled = true;
 
 
     @Override
@@ -128,9 +132,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
 
 
-        mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-
-
         if (checkSelfPermission(Manifest.permission.BODY_SENSORS)
                 != PackageManager.PERMISSION_GRANTED) {
             writeDebug("Permission heart not granted, asking for");
@@ -140,29 +141,29 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             writeDebug("Permission heart already granted");
         }
 
-        // change number in base of the watch
-        for (Sensor currentSensor : mSensorManager.getSensorList(Sensor.TYPE_ALL)) {
-            // writeDebug("Name: " + currentSensor.getName() + " Type_String: " + currentSensor.getStringType() + " /ype_number: " + currentSensor.getType());
-
-            if (currentSensor.getType() == 65571)
-                heartIR = currentSensor;
-
-            if (currentSensor.getType() == 65572)
-                heartRED = currentSensor;
-
-            if (currentSensor.getType() == 65573)
-                heartGREEN = currentSensor;
-
-            if (currentSensor.getType() == 65574)
-                heartBLUE = currentSensor;
-
+        mSensorExtension = new SsensorExtension();
+        try {
+            mSensorExtension.initialize(this);
+        } catch (SsdkUnsupportedException e) {
+            e.printStackTrace();
+        } catch (IllegalArgumentException e) {
+            e.printStackTrace();
+        } catch (SecurityException e) {
+            e.printStackTrace();
+        } catch (IllegalStateException e) {
+            e.printStackTrace();
         }
 
+        try {
+            mSsensorManager = new SsensorManager(this, mSensorExtension);
+        } catch (IllegalArgumentException e) {
+            e.printStackTrace();
+        }
 
-        if (heartIR == null || heartRED == null || heartBLUE == null || heartGREEN == null) {
-            writeErrorDebug("One sensor is null");
-        } else {
-            writeDebug("All set and ready to go");
+        List<Ssensor> ssensorList = mSsensorManager.getSensorList(Ssensor.TYPE_ALL);
+
+        for (Ssensor ssensor : ssensorList) {
+            writeDebug("Sensor: " + ssensor.getType() + " : " + ssensor.getName());
         }
 
 
@@ -248,14 +249,23 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     private void startRecord() throws IOException {
-        SensorEventListener listener = this;
-        mSensorManager.registerListener(listener, heartIR, DELAY);
-        mSensorManager.registerListener(listener, heartRED, DELAY);
-        // mSensorManager.registerListener(listener, heartBLUE, DELAY);
-        mSensorManager.registerListener(listener, heartGREEN, DELAY);
-
+        writeDebug("Initialize sensors");
+        ir = mSsensorManager.getDefaultSensor(Ssensor.TYPE_HRM_LED_IR);
+        if (ir == null)
+            writeErrorDebug("ir is null");
+        red = mSsensorManager.getDefaultSensor(Ssensor.TYPE_HRM_LED_RED);
+        if (red == null)
+            writeErrorDebug("red is null");
+        blue = mSsensorManager.getDefaultSensor(Ssensor.TYPE_HRM_LED_BLUE);
+        if (blue == null)
+            writeErrorDebug("blue is null");
+        green = mSsensorManager.getDefaultSensor(Ssensor.TYPE_HRM_LED_GREEN);
+        if (green == null)
+            writeErrorDebug("green is null");
 
         writeDebug("Sensors initialized");
+
+        writeDebug("Create logfile");
         fileToSend = new File(getFilesDir(), "raw_data.csv");
 
         boolean res = fileToSend.createNewFile();
@@ -269,6 +279,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         String header = "Time,SensorTimestamp,Value,Sensor\n";
         fileWriter.append(header);
         valori += header;
+
+        writeDebug("Starting record...");
+        if (irEnabled)
+            mSsensorManager.registerListener(this, ir, SensorManager.SENSOR_DELAY_NORMAL);
+        if (redEnabled)
+            mSsensorManager.registerListener(this, red, SensorManager.SENSOR_DELAY_NORMAL);
+        if (blueEnabled)
+            mSsensorManager.registerListener(this, blue, SensorManager.SENSOR_DELAY_NORMAL);
+        if (greenEnabled)
+            mSsensorManager.registerListener(this, green, SensorManager.SENSOR_DELAY_NORMAL);
+        writeDebug("Record started.");
     }
 
     @Override
@@ -302,20 +323,70 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         return Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState());
     }
 
+    @Override
+    public void OnSensorChanged(SsensorEvent ssensorEvent) {
+        boolean shouldStop = true;
+        if (blueEnabled)
+            shouldStop = time_blue > NUM_SAMPLES;
+        if (redEnabled)
+            shouldStop = shouldStop && time_red > NUM_SAMPLES;
+        if (irEnabled)
+            shouldStop = shouldStop && time_ir > NUM_SAMPLES;
+        if (greenEnabled)
+            shouldStop = shouldStop && time_green > NUM_SAMPLES;
 
-    private void writeDebug(String message) {
-        runOnUiThread(() -> {
-            Log.d(TAG, message);
-            debugger.setText(String.format("%s%s\n", debugger.getText(), message));
-        });
+        if (shouldStop) {
+            if (redEnabled)
+                mSsensorManager.unregisterListener(this, red);
+            if (blueEnabled)
+                mSsensorManager.unregisterListener(this, blue);
+            if (greenEnabled)
+                mSsensorManager.unregisterListener(this, green);
+            if (irEnabled)
+                mSsensorManager.unregisterListener(this, ir);
+            writeDebug("Data capture finished");
+            time_ir = 0;
+            time_blue = 0;
+            time_red = 0;
+            time_green = 0;
+        } else {
+
+            if (ssensorEvent.sensor.getName().contains("IR")) {
+                writeDebug(time_ir + "," + ssensorEvent.values[0] + "," + ssensorEvent.sensor.getName());
+                saveData(time_ir, ssensorEvent.values[0], ssensorEvent.sensor.getName());
+                time_ir++;
+            }
+            if (ssensorEvent.sensor.getName().contains("RED")) {
+                writeDebug(time_red + "," + ssensorEvent.values[0] + "," + ssensorEvent.sensor.getName());
+                saveData(time_red, ssensorEvent.values[0], ssensorEvent.sensor.getName());
+                time_red++;
+            }
+            if (ssensorEvent.sensor.getName().contains("BLUE")) {
+                writeDebug(time_blue + "," + ssensorEvent.values[0] + "," + ssensorEvent.sensor.getName());
+                saveData(time_blue, ssensorEvent.values[0], ssensorEvent.sensor.getName());
+                time_blue++;
+            }
+            if (ssensorEvent.sensor.getName().contains("GREEN")) {
+                writeDebug(time_green + "," + ssensorEvent.values[0] + "," + ssensorEvent.sensor.getName());
+                saveData(time_green, ssensorEvent.values[0], ssensorEvent.sensor.getName());
+                time_green++;
+            }
+
+        }
     }
 
+    @Override
+    public void OnAccuracyChanged(Ssensor ssensor, int i) {
+        writeDebug(ssensor.getName() + " has changed accuracy: " + i);
+    }
 
-    private void writeErrorDebug(String message) {
-        runOnUiThread(() -> {
-            Log.e(TAG, message);
-            debugger.setText(String.format("%s%s%s\n", debugger.getText(), "ERROR: ", message));
-        });
+    private void saveData(int time, float value, String sensorName) {
+        try {
+            fileWriter.append(String.valueOf(time)).append(",").append(String.valueOf(value)).append(",").append(sensorName).append("\n");
+            valori += String.valueOf(time) + "," + String.valueOf(value) + "," + sensorName + "\n";
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -332,57 +403,21 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             channelClient.unregisterChannelCallback(channelCallback);
     }
 
-    @Override
-    public void onSensorChanged(SensorEvent sensorEvent) {
-        if (time_ir > NUM_SAMPLES && time_red > NUM_SAMPLES && time_green > NUM_SAMPLES) {
-//&& time_blue > NUM_SAMPLESry'
-            time_ir = 0;
-            time_red = 0;
-            time_blue = 0;
-            time_green = 0;
 
-            mSensorManager.unregisterListener(this);
-            writeDebug("Finished");
-        } else {
-
-            if (sensorEvent.sensor.getName().contains("RED")) {
-                writeDebug("" + time_red + "," + sensorEvent.values[0] + "," + sensorEvent.sensor.getName());
-                saveData(time_red, sensorEvent.values[0], sensorEvent.sensor.getName());
-                time_red++;
-            }
-
-            if (sensorEvent.sensor.getName().contains("IR")) {
-                writeDebug("" + time_ir + "," + sensorEvent.values[0] + "," + sensorEvent.sensor.getName());
-                saveData(time_ir, sensorEvent.values[0], sensorEvent.sensor.getName());
-                time_ir++;
-            }
-
-            if (sensorEvent.sensor.getName().contains("GREEN")) {
-                writeDebug("" + time_green + "," + sensorEvent.values[0] + "," + sensorEvent.sensor.getName());
-                saveData(time_green, sensorEvent.values[0], sensorEvent.sensor.getName());
-                time_green++;
-            }
-
-            if (sensorEvent.sensor.getName().contains("BLUE")) {
-                writeDebug("" + time_blue + "," + sensorEvent.values[0] + "," + sensorEvent.sensor.getName());
-                saveData(time_blue, sensorEvent.values[0], sensorEvent.sensor.getName());
-                time_blue++;
-            }
-
-        }
+    private void writeDebug(String message) {
+        runOnUiThread(() -> {
+            Log.d(TAG, message);
+            debugger.setText(String.format("%s%s\n", debugger.getText(), message));
+        });
     }
 
-    private void saveData(int time, float value, String sensorName) {
-        try {
-            fileWriter.append(String.valueOf(time)).append(",").append(String.valueOf(value)).append(",").append(sensorName).append("\n");
-            valori += String.valueOf(time) + "," + String.valueOf(value) + "," + sensorName + "\n";
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+
+    private void writeErrorDebug(String message) {
+        runOnUiThread(() -> {
+            Log.e(TAG, message);
+            debugger.setText(String.format("%s%s%s\n", debugger.getText(), "ERROR: ", message));
+        });
     }
 
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int i) {
-        writeDebug(sensor.getName() + " has changed accuracy: " + i);
-    }
+
 }

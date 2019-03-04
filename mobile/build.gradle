@@ -39,5 +39,5 @@ dependencies {
     androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
     wearApp project(':wear')
     implementation 'com.google.android.gms:play-services-wearable:16.0.1'
-    implementation files('libs/samsung-health-data-v1.3.0.jar')
+    implementation files('libs/ssensorextensionsdk-v1.2.2.jar')
 }
