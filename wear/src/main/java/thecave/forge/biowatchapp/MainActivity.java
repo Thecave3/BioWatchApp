@@ -101,7 +101,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
                     Toast.makeText(getApplicationContext(), e.getMessage(), Toast.LENGTH_LONG).show();
                 }
                 button.setText(R.string.stop_record);
-                mSensorManager.registerListener(listener, heartRateSensor, SensorManager.SENSOR_DELAY_NORMAL);
+                mSensorManager.registerListener(listener, heartRateSensor, SensorManager.SENSOR_DELAY_UI);
                 isRecording = true;
             }
 
